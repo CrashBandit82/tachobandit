@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TachoBandit</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>TachoBandit</h1>
+  <span class="hint">Alle Zeiten in UTC (wie im Tachografen gespeichert)</span>
+</header>
+<main>
+  <aside>
+    <label id="drop" class="drop">
+      <input id="pick" type="file" multiple accept=".ddd,.DDD,.tgd,.TGD,.esm,.c1b,.v1b">
+      <strong>.ddd-Dateien hierher ziehen</strong>
+      <span>oder klicken zum Auswählen (Fahrerkarte oder Fahrzeug)</span>
+    </label>
+    <div id="msg" class="msg" hidden></div>
+    <div class="filter">
+      <button data-kind="all" class="on">Alle</button>
+      <button data-kind="card">Fahrerkarte</button>
+      <button data-kind="vu">Fahrzeug</button>
+    </div>
+    <ul id="files"></ul>
+  </aside>
+  <section id="view">
+    <p class="empty">Datei links auswählen oder hochladen.</p>
+  </section>
+</main>
+<script src="app.js"></script>
+</body>
+</html>
