@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="TachoBandit">
+  <!-- tachograph disc: 24 h ring with activity arcs (drive, work, availability, rest) -->
+  <circle cx="32" cy="32" r="29" fill="#fff" stroke="#1d232b" stroke-width="4"/>
+  <g fill="none" stroke-width="7" transform="rotate(-90 32 32)">
+    <circle cx="32" cy="32" r="21" stroke="#2f9e44" stroke-dasharray="44 88" stroke-dashoffset="0"/>
+    <circle cx="32" cy="32" r="21" stroke="#d9480f" stroke-dasharray="40 92" stroke-dashoffset="-46"/>
+    <circle cx="32" cy="32" r="21" stroke="#1c7ed6" stroke-dasharray="22 110" stroke-dashoffset="-88"/>
+    <circle cx="32" cy="32" r="21" stroke="#e8a400" stroke-dasharray="18 114" stroke-dashoffset="-112"/>
+  </g>
+  <!-- bandit mask with eye holes -->
+  <path fill="#1d232b" fill-rule="evenodd" d="M6 31c3-8 15-9 26-4 11-5 23-4 26 4-2 9-13 11-21 6l-5-2-5 2c-8 5-19 3-21-6z
+    M15.5 30.5a6 3.6 0 1 0 12 0a6 3.6 0 1 0-12 0z M36.5 30.5a6 3.6 0 1 0 12 0a6 3.6 0 1 0-12 0z"/>
+</svg>

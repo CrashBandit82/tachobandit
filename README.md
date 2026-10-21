@@ -1,3 +1,5 @@
+<img src="server/static/logo.svg" alt="TachoBandit-Logo" width="96">
+
 # TachoBandit
 
 Persönliche Verwaltung von Tachografen-Daten: `.ddd`-Dateien von **Fahrerkarte** und **Fahrzeug (Massenspeicher)** hochladen, dauerhaft speichern und übersichtlich anzeigen – lokal im Docker-Container, ohne Cloud.
