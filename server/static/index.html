@@ -9,7 +9,8 @@
 <body>
 <header>
   <h1>TachoBandit</h1>
-  <span class="hint">Alle Zeiten in UTC (wie im Tachografen gespeichert)</span>
+  <div class="tz"><button data-tz="UTC">UTC</button><button data-tz="local">Ortszeit</button></div>
+  <span class="hint" id="tzhint"></span>
 </header>
 <main>
   <aside>
@@ -18,6 +19,7 @@
       <strong>.ddd-Dateien hierher ziehen</strong>
       <span>oder klicken zum Auswählen (Fahrerkarte oder Fahrzeug)</span>
     </label>
+    <button id="readcard" class="readcard">Fahrerkarte aus Kartenleser auslesen</button>
     <div id="msg" class="msg" hidden></div>
     <div class="filter">
       <button data-kind="all" class="on">Alle</button>
@@ -30,6 +32,7 @@
     <p class="empty">Datei links auswählen oder hochladen.</p>
   </section>
 </main>
+<script src="rules.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

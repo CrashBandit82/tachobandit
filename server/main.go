@@ -158,6 +158,25 @@ func listFiles(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, files)
 }
 
+// store saves a decoded tachograph file under its content id (duplicates are kept once).
+func store(filename string, data []byte) (*fileInfo, error) {
+	sum := sha256.Sum256(data)
+	id := hex.EncodeToString(sum[:])[:16]
+	name := unsafeChr.ReplaceAllString(filepath.Base(filename), "_")
+	path := filepath.Join(dataDir, storedName(id, name))
+	if old, err := findFile(id); err == nil {
+		path = old // same content already stored
+	} else if err := os.WriteFile(path, data, 0o644); err != nil {
+		return nil, err
+	}
+	st, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+	_, stored, _ := strings.Cut(filepath.Base(path), "__")
+	return &fileInfo{id, stored, kindOf(data), st.Size(), st.ModTime()}, nil
+}
+
 func upload(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseMultipartForm(maxUpload); err != nil {
 		fail(w, 400, "Upload fehlerhaft: "+err.Error())
@@ -187,20 +206,9 @@ func upload(w http.ResponseWriter, r *http.Request) {
 			results = append(results, res)
 			continue
 		}
-		sum := sha256.Sum256(data)
-		id := hex.EncodeToString(sum[:])[:16]
-		name := unsafeChr.ReplaceAllString(filepath.Base(fh.Filename), "_")
-		path := filepath.Join(dataDir, storedName(id, name))
-		if old, err := findFile(id); err == nil {
-			path = old // same content already stored
-		} else if err := os.WriteFile(path, data, 0o644); err != nil {
+		if res.File, err = store(fh.Filename, data); err != nil {
 			res.Error = err.Error()
-			results = append(results, res)
-			continue
 		}
-		st, _ := os.Stat(path)
-		_, stored, _ := strings.Cut(filepath.Base(path), "__")
-		res.File = &fileInfo{id, stored, kindOf(data), st.Size(), st.ModTime()}
 		results = append(results, res)
 	}
 	writeJSON(w, 200, results)
@@ -260,6 +268,7 @@ func main() {
 	mux.HandleFunc("POST /api/files", upload)
 	mux.HandleFunc("GET /api/files/{id}", getFile)
 	mux.HandleFunc("DELETE /api/files/{id}", deleteFile)
+	mux.HandleFunc("POST /api/card/read", readCardHandler)
 	log.Printf("tachobandit auf %s, Daten in %s", listen, dataDir)
 	log.Fatal(http.ListenAndServe(listen, mux))
 }

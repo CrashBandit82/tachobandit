@@ -8,3 +8,4 @@ services:
       - "127.0.0.1:8095:8080"   # nur lokal erreichbar
     volumes:
       - ./data:/data
+      - /run/pcscd:/run/pcscd   # Kartenleser über pcscd des Hosts

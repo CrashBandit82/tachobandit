@@ -28,11 +28,37 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const nation = n => (n == null || n === 0) ? '' : (NATIONS[n] || (n === 0xFD ? 'EC' : n === 0xFE ? 'EUR' : n === 0xFF ? 'WLD' : '#' + n));
 const pad = n => String(n).padStart(2, '0');
 const WD = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
+
+// ---- Time zone: UTC (as stored by the tachograph) or the browser's local zone ----
+const LOCAL_TZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
+let tzMode = (() => { try { return localStorage.getItem('tz') || 'UTC'; } catch { return 'UTC'; } })();
+const zone = () => tzMode === 'local' ? LOCAL_TZ : 'UTC';
+const tzFmt = {};
+// wall clock of a timestamp (ms) in the selected zone
+function clock(ms) {
+  const f = tzFmt[zone()] ||= new Intl.DateTimeFormat('en-CA', { timeZone: zone(), year: 'numeric', month: '2-digit',
+    day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+  const p = Object.fromEntries(f.formatToParts(new Date(ms)).map(x => [x.type, x.value]));
+  return { y: +p.year, mo: +p.month, d: +p.day, h: +p.hour, mi: +p.minute };
+}
+const dayKey = ms => { const c = clock(ms); return `${c.y}-${pad(c.mo)}-${pad(c.d)}`; };
+// start (ms) of a calendar day in the selected zone, DST-safe
+function midnight(key) {
+  const [y, mo, d] = key.split('-').map(Number);
+  let t = Date.UTC(y, mo - 1, d);
+  for (let i = 0; i < 2; i++) {
+    const c = clock(t);
+    t -= Date.UTC(c.y, c.mo - 1, c.d, c.h, c.mi) - Date.UTC(y, mo - 1, d);
+  }
+  return t;
+}
+
 function fmtDT(iso) {
   if (!iso) return '';
-  const d = new Date(iso);
-  return `${pad(d.getUTCDate())}.${pad(d.getUTCMonth() + 1)}.${d.getUTCFullYear()} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
+  const c = clock(Date.parse(iso));
+  return `${pad(c.d)}.${pad(c.mo)}.${c.y} ${pad(c.h)}:${pad(c.mi)}`;
 }
+// calendar dates (expiry, birthday, day headers) are not shifted
 function fmtD(iso) {
   if (!iso) return '';
   const d = new Date(iso);
@@ -158,6 +184,53 @@ function normVu(d) {
   };
 }
 
+// Days cut at midnight of the selected zone. Source days are UTC days; every segment
+// gets elapsed minutes since the zone's midnight (from/to), clock labels (fl/tl) and the
+// day length (23/25 h on DST changes). Day km stay with the same calendar date.
+function zonedDays(days) {
+  const out = new Map();
+  const bucket = key => {
+    if (!out.has(key)) {
+      const m0 = midnight(key), m1 = midnight(dayKey(m0 + 25 * 3600e3));
+      out.set(key, { date: key + 'T00:00:00Z', m0, len: (m1 - m0) / 6e4, km: null, slots: [] });
+    }
+    return out.get(key);
+  };
+  const label = (day, min) => { if (min >= day.len) return '24:00'; const c = clock(day.m0 + min * 6e4); return `${pad(c.h)}:${pad(c.mi)}`; };
+  days.forEach(src => {
+    const base = Date.parse(src.date.slice(0, 10) + 'T00:00:00Z');
+    const own = bucket(dayKey(base + 12 * 3600e3));
+    if (src.km != null) own.km = (own.km || 0) + src.km;
+    src.slots.forEach(sl => sl.segs.forEach(s => {
+      let a = base + s.from * 6e4;
+      const b = base + s.to * 6e4;
+      while (a < b) {
+        const day = bucket(dayKey(a)), end = Math.min(b, day.m0 + day.len * 6e4);
+        let slot = day.slots.find(x => x.label === sl.label);
+        if (!slot) day.slots.push(slot = { label: sl.label, segs: [] });
+        slot.segs.push({ ...s, from: (a - day.m0) / 6e4, to: (end - day.m0) / 6e4 });
+        a = end;
+      }
+    }));
+  });
+  const res = [...out.values()].filter(d => d.slots.length).sort((a, b) => b.date.localeCompare(a.date));
+  res.forEach(d => {
+    const order = days[0]?.slots.map(s => s.label) || [];
+    d.slots.sort((x, y) => order.indexOf(x.label) - order.indexOf(y.label));
+    d.slots.forEach(sl => {
+      // rejoin pieces of one activity that were cut at the UTC day boundary
+      sl.segs = sl.segs.sort((x, y) => x.from - y.from).reduce((acc, s) => {
+        const p = acc[acc.length - 1];
+        if (p && p.to === s.from && p.type === s.type && p.card === s.card && p.team === s.team) p.to = s.to;
+        else acc.push(s);
+        return acc;
+      }, []);
+      sl.segs.forEach(s => { s.fl = label(d, s.from); s.tl = label(d, s.to); });
+    });
+  });
+  return res;
+}
+
 function verification(d) {
   // EF ICC / EF IC (chip identification) are not signed on the card
   const blocks = collect(d, o => 'verified' in o && hasData(o) && !('ic_identifier' in o) && !('ic_serial_number' in o));
@@ -188,9 +261,9 @@ function renderList() {
     '<li class="muted">Noch keine Dateien.</li>';
 }
 
-function bar(segs) {
-  return `<div class="bar">${segs.map(s => `<b class="a${s.type}${s.card ? '' : ' nocard'}" style="left:${s.from / 14.4}%;width:${(s.to - s.from) / 14.4}%"
-    title="${hm(s.from)}–${hm(s.to)} ${ACT[s.type]} (${hm(s.to - s.from)})${s.card ? '' : ' – ohne Karte'}"></b>`).join('')}</div>`;
+function bar(segs, len) {
+  return `<div class="bar">${segs.map(s => `<b class="a${s.type}${s.card ? '' : ' nocard'}" style="left:${s.from / len * 100}%;width:${(s.to - s.from) / len * 100}%"
+    title="${s.fl}–${s.tl} ${ACT[s.type]} (${hm(s.to - s.from)})${s.card ? '' : ' – ohne Karte'}"></b>`).join('')}</div>`;
 }
 const scale = `<div class="scale">${[0, 3, 6, 9, 12, 15, 18, 21, 24].map(h => `<span style="left:${h / 24 * 100}%">${h}</span>`).join('')}</div>`;
 const legend = `<div class="legend">${ACT.map((a, i) => `<span><i style="background:var(--${['rest', 'avail', 'work', 'drive'][i]})"></i>${a}</span>`).join('')}
@@ -203,11 +276,12 @@ function monday(iso) {
 }
 
 function renderDays(n) {
-  if (!n.days.length) return '<p class="empty">Keine Tätigkeiten gespeichert.</p>';
+  n.zdays = zonedDays(n.days);
+  if (!n.zdays.length) return '<p class="empty">Keine Tätigkeiten gespeichert.</p>';
   let html = legend, week = null;
   const weekDrive = {};
-  n.days.forEach(day => { const w = monday(day.date); weekDrive[w] = (weekDrive[w] || 0) + day.slots.reduce((s, sl) => s + totals(sl.segs)[3], 0); });
-  n.days.forEach((day, i) => {
+  n.zdays.forEach(day => { const w = monday(day.date); weekDrive[w] = (weekDrive[w] || 0) + day.slots.reduce((s, sl) => s + totals(sl.segs)[3], 0); });
+  n.zdays.forEach((day, i) => {
     const w = monday(day.date);
     if (w !== week) {
       week = w;
@@ -216,11 +290,13 @@ function renderDays(n) {
         ${n.kind === 'card' ? `<span>Lenkzeit Woche: ${hm(weekDrive[w])} h</span>` : ''}</div>`;
     }
     const dt = new Date(day.date);
-    html += `<div class="day" data-i="${i}"><div class="date">${WD[dt.getUTCDay()]} ${fmtD(day.date)}</div><div>`;
+    const vio = (n.viol || []).filter(v => v.at * 6e4 >= day.m0 && v.at * 6e4 < day.m0 + day.len * 6e4);
+    html += `<div class="day" data-i="${i}"><div class="date">${WD[dt.getUTCDay()]} ${fmtD(day.date)}${vio.length
+      ? `<span class="vio" title="${esc(vio.map(v => v.title).join('\n'))}">⚠ ${vio.length}</span>` : ''}</div><div>`;
     day.slots.forEach(sl => {
       const t = totals(sl.segs);
       if (sl.label) html += `<div class="slot">${sl.label}</div>`;
-      html += bar(sl.segs) + `<div class="sums">Lenken ${hm(t[3])} · Arbeit ${hm(t[2])} · Bereitschaft ${hm(t[1])} · Ruhe ${hm(t[0])}${t[4] ? ` · ohne Karte ${hm(t[4])}` : ''}</div>`;
+      html += bar(sl.segs, day.len) + `<div class="sums">Lenken ${hm(t[3])} · Arbeit ${hm(t[2])} · Bereitschaft ${hm(t[1])} · Ruhe ${hm(t[0])}${t[4] ? ` · ohne Karte ${hm(t[4])}` : ''}</div>`;
     });
     html += `${scale}<div class="sums">${day.km != null ? km(day.km) + ' km' : ''}</div></div><div class="detail" hidden></div></div>`;
   });
@@ -230,7 +306,7 @@ function renderDays(n) {
 function dayDetail(day) {
   return day.slots.map(sl => `${sl.label ? `<h3>${sl.label}</h3>` : ''}<div class="tbl"><table>
     <tr><th>Von</th><th>Bis</th><th>Tätigkeit</th><th class="num">Dauer</th><th></th></tr>
-    ${sl.segs.map(s => `<tr><td>${hm(s.from)}</td><td>${hm(s.to)}</td><td>${ACT[s.type]}</td><td class="num">${hm(s.to - s.from)}</td>
+    ${sl.segs.map(s => `<tr><td>${s.fl}</td><td>${s.tl}</td><td>${ACT[s.type]}</td><td class="num">${hm(s.to - s.from)}</td>
       <td class="muted">${s.card ? '' : 'ohne Karte'}${s.team ? ' Team' : ''}</td></tr>`).join('')}</table></div>`).join('');
 }
 
@@ -239,11 +315,33 @@ const table = (head, rows) => rows.length
     ${rows.map(r => `<tr>${r.map((c, i) => `<td${head[i].endsWith(' km') || head[i] === 'km' ? ' class="num"' : ''}>${esc(c)}</td>`).join('')}</tr>`).join('')}</table></div>`
   : '<p class="empty">Keine Einträge.</p>';
 
+const SEV = { MSI: 'schwerst', VSI: 'sehr schwer', SI: 'schwer', MI: 'geringfügig' };
+function renderCtrl(viol) {
+  const count = k => viol.filter(v => (v.sev || v.law) === k).length;
+  const chips = ['MSI', 'VSI', 'SI', 'MI'].map(k => `<span class="sev ${k}">${SEV[k]}: ${count(k)}</span>`).join('') +
+    `<span class="sev AZG">AZG: ${count('AZG')}</span>`;
+  const rows = law => viol.filter(v => v.law === law).map(v => `<tr><td>${fmtDT(new Date(v.at * 6e4).toISOString())}</td>
+    <td>${esc(v.title)}<div class="muted">${esc(v.rule)}${v.note ? ' · ' + esc(v.note) : ''}</div></td>
+    <td class="num">${hm(v.value)} h</td><td class="num">${hm(v.limit)} h</td>
+    <td>${v.sev ? `<span class="sev ${v.sev}">${SEV[v.sev]}</span>` : ''}</td><td>${esc(v.fine)}</td></tr>`).join('');
+  const tbl = (law, head) => {
+    const r = rows(law);
+    return `<h3>${head}</h3>` + (r ? `<div class="tbl"><table><tr><th>Zeit</th><th>Verstoß</th><th class="num">Wert</th>
+      <th class="num">Grenze</th><th>Schwere</th><th>Strafrahmen</th></tr>${r}</table></div>` : '<p class="empty">Keine Verstöße gefunden.</p>');
+  };
+  return `<p class="msg">Automatische Prüfung nach VO (EG) 561/2006 (Schwere nach Anhang III RL 2006/22/EG, Strafrahmen für den Lenker
+    nach KFG §134) und österreichischem AZG. Vereinfacht, keine Rechtsberatung: Ausnahmen (Fähre/Zug, Mehrfahrerbetrieb, Halteplatz,
+    12-Tage-Regel, Ausgleich reduzierter Wochenruhe) werden nicht geprüft, Zeit ohne Karte zählt als Ruhe.</p>
+    <div class="chips">${chips}</div>
+    ${tbl('EU', 'Lenk- und Ruhezeiten (EU, KFG)')}${tbl('AZG', 'Arbeitszeit (AZG, Österreich)')}`;
+}
+
 const placeType = t => ['Beginn', 'Ende', 'Beginn (manuell)', 'Ende (manuell)'][t] ?? t;
 
 function renderTab(n, tab) {
   switch (tab) {
     case 'days': return renderDays(n);
+    case 'ctrl': return renderCtrl(n.viol);
     case 'veh': return table(['Kennzeichen', 'Von', 'Bis', 'Start km', 'Ende km', 'km', 'FIN'],
       n.veh.map(v => [reg(v.vehicle_registration), fmtDT(v.vehicle_first_use), fmtDT(v.vehicle_last_use), km(v.vehicle_odometer_begin),
         km(v.vehicle_odometer_end), km(v.vehicle_odometer_end - v.vehicle_odometer_begin), v.vehicle_identification_number || '']));
@@ -279,7 +377,8 @@ async function openFile(id) {
   const v = verification(res.data);
   const tabs = n.kind === 'vu'
     ? [['days', 'Tage'], ['cards', 'Karten'], ['places', 'Orte'], ['events', 'Ereignisse/Fehler'], ['tech', 'Technik']]
-    : [['days', 'Tage'], ['veh', 'Fahrzeuge'], ['places', 'Orte'], ['events', 'Ereignisse/Fehler']];
+    : [['days', 'Tage'], ['veh', 'Fahrzeuge'], ['places', 'Orte'], ['events', 'Ereignisse/Fehler'], ['ctrl', 'Kontrolle']];
+  if (n.kind === 'card') n.viol = analyze(n.days);
   view.innerHTML = `<div class="head"><div><h2>${esc(n.title)}</h2><div class="muted">${esc(n.sub)} · ${esc(f.name)}</div></div>
     <div><span class="badge ${v.ok === v.total && v.total ? 'ok' : 'bad'}" title="digitale Signaturen der Datenblöcke">
       Signatur ${v.ok === v.total && v.total ? 'gültig' : `${v.ok}/${v.total} gültig`}</span>
@@ -298,7 +397,7 @@ async function openFile(id) {
     if (!el || e.target.closest('.detail')) return;
     const det = el.querySelector('.detail');
     det.hidden = !det.hidden;
-    if (!det.hidden) det.innerHTML = dayDetail(n.days[el.dataset.i]);
+    if (!det.hidden) det.innerHTML = dayDetail(n.zdays[el.dataset.i]);
   };
   $('#del').onclick = async e => {
     if (e.target.dataset.armed !== '1') { e.target.dataset.armed = '1'; e.target.textContent = 'Wirklich löschen?'; return; }
@@ -328,6 +427,18 @@ async function uploadFiles(list) {
   } catch (e) { msg.className = 'msg err'; msg.textContent = e.message; }
 }
 
+$('#readcard').onclick = async e => {
+  const btn = e.target, msg = $('#msg');
+  btn.disabled = true;
+  msg.hidden = false; msg.className = 'msg'; msg.textContent = 'Lese Karte aus … (Karte nicht entnehmen)';
+  try {
+    const f = await api('/api/card/read', { method: 'POST' });
+    msg.textContent = `Karte ausgelesen: ${f.name}`;
+    await loadList();
+    openFile(f.id);
+  } catch (err) { msg.className = 'msg err'; msg.textContent = err.message; }
+  btn.disabled = false;
+};
 $('#files').onclick = e => { const li = e.target.closest('li[data-id]'); if (li) openFile(li.dataset.id); };
 $('#pick').onchange = e => { uploadFiles(e.target.files); e.target.value = ''; };
 const drop = $('#drop');
@@ -339,4 +450,16 @@ document.querySelectorAll('.filter button').forEach(b => b.onclick = () => {
   document.querySelectorAll('.filter button').forEach(x => x.classList.toggle('on', x === b));
   renderList();
 });
+function showTz() {
+  document.querySelectorAll('[data-tz]').forEach(b => b.classList.toggle('on', b.dataset.tz === tzMode));
+  $('#tzhint').textContent = tzMode === 'local' ? `Zeiten in Ortszeit (${LOCAL_TZ})` : 'Zeiten in UTC (wie im Tachografen gespeichert)';
+}
+document.querySelectorAll('[data-tz]').forEach(b => b.onclick = () => {
+  tzMode = b.dataset.tz;
+  try { localStorage.setItem('tz', tzMode); } catch { }
+  showTz();
+  renderList();
+  if (current) openFile(current.id);
+});
+showTz();
 loadList().then(() => { if (location.hash) openFile(location.hash.slice(1)); });

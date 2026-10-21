@@ -16,6 +16,7 @@ header { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; paddi
 h1 { font-size: 18px; margin: 0; }
 h2 { font-size: 17px; margin: 0 0 4px; }
 h3 { font-size: 14px; margin: 20px 0 8px; }
+.tz { display: flex; gap: 4px; }
 .hint, .muted { color: var(--muted); font-size: 12px; }
 main { display: grid; grid-template-columns: 300px 1fr; gap: 16px; padding: 16px 20px; align-items: start; }
 @media (max-width: 800px) { main { grid-template-columns: 1fr; padding: 12px 16px; } }
@@ -24,6 +25,7 @@ aside, #view { background: var(--panel); border: 1px solid var(--line); border-r
 .drop.over { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
 .drop input { display: none; }
 .drop span { color: var(--muted); font-size: 12px; }
+.readcard { width: 100%; margin-top: 10px; padding: 8px 10px; }
 .msg { margin-top: 10px; font-size: 12px; white-space: pre-line; }
 .msg.err { color: var(--bad); }
 .filter { display: flex; gap: 6px; margin: 14px 0 8px; }
@@ -50,7 +52,7 @@ button.danger { color: var(--bad); }
 .day .sums { grid-column: 2; font-size: 12px; color: var(--muted); }
 .day .detail { grid-column: 1 / -1; }
 @media (max-width: 560px) { .day { grid-template-columns: 1fr; } .day .sums { grid-column: 1; } }
-.bar { position: relative; height: 22px; background: var(--none); border-radius: 3px; overflow: hidden; }
+.bar { position: relative; height: 34px; background: var(--none); border-radius: 3px; overflow: hidden; }
 .bar b { position: absolute; top: 0; bottom: 0; }
 .bar b.a0 { background: var(--rest); } .bar b.a1 { background: var(--avail); }
 .bar b.a2 { background: var(--work); } .bar b.a3 { background: var(--drive); top: 0; }
@@ -63,3 +65,8 @@ table { border-collapse: collapse; width: 100%; font-size: 13px; }
 th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
 th { color: var(--muted); font-weight: 500; }
 td.num, th.num { text-align: right; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
+.sev { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 10px; color: #fff; white-space: nowrap; }
+.sev.MSI { background: #7b1fa2; } .sev.VSI { background: var(--bad); } .sev.SI { background: #e8590c; }
+.sev.MI { background: #e8a400; color: #1d232b; } .sev.AZG { background: var(--accent); }
+.vio { margin-left: 6px; color: var(--bad); font-size: 12px; font-weight: 600; }
